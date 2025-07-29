@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G-ACE.inc TGAXIS - プレスリリース</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter (for general text) and Noto Sans JP (for Japanese text) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, onSnapshot, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global Firebase variables (provided by Canvas environment)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        let currentUserId = null; // To store the authenticated user ID
+
+        // Authenticate user on load
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUserId = user.uid;
+                console.log("Authenticated user:", currentUserId);
+            } else {
+                if (initialAuthToken) {
+                    try {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                        currentUserId = auth.currentUser.uid;
+                        console.log("Signed in with custom token:", currentUserId);
+                    } catch (error) {
+                        console.error("Error signing in with custom token:", error);
+                        await signInAnonymously(auth); // Fallback to anonymous
+                        currentUserId = auth.currentUser.uid;
+                        console.log("Signed in anonymously (fallback):", currentUserId);
+                    }
+                } else {
+                    await signInAnonymously(auth);
+                    currentUserId = auth.currentUser.uid;
+                    console.log("Signed in anonymously:", currentUserId);
+                }
+            }
+            // Once authenticated, load press releases
+            loadPressReleases();
+        });
+
+        // Function to load press releases from Firestore
+        function loadPressReleases() {
+            if (!db || !currentUserId) {
+                console.log("Firestore not ready or user not authenticated.");
+                return;
+            }
+
+            // Public data collection path for press releases (same as latestPosts for unified management)
+            const pressReleasesCollectionRef = collection(db, `artifacts/${appId}/public/data/latestPosts`);
+            const q = query(pressReleasesCollectionRef);
+
+            onSnapshot(q, (snapshot) => {
+                const prListContainer = document.getElementById('press-release-list');
+                prListContainer.innerHTML = ''; // Clear existing items
+
+                let pressReleases = [];
+                snapshot.forEach((doc) => {
+                    pressReleases.push({ id: doc.id, ...doc.data() });
+                });
+
+                // Sort press releases by timestamp in descending order (latest first) client-side
+                pressReleases.sort((a, b) => {
+                    const timestampA = a.timestamp instanceof Timestamp ? a.timestamp.toDate() : new Date(0);
+                    const timestampB = b.timestamp instanceof Timestamp ? b.timestamp.toDate() : new Date(0);
+                    return timestampB.getTime() - timestampA.getTime();
+                });
+
+                if (pressReleases.length === 0) {
+                    prListContainer.innerHTML = '<p class="text-gray-400 text-center">まだプレスリリースはありません。</p>';
+                    return;
+                }
+
+                pressReleases.forEach(pr => {
+                    const prElement = document.createElement('div');
+                    prElement.classList.add('bg-[#2A2A2A]', 'p-6', 'rounded-xl', 'shadow-lg', 'card-hover-effect', 'pr-item');
+                    
+                    const date = pr.timestamp ? new Date(pr.timestamp.toDate()).toLocaleDateString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric' }) : '日付不明';
+                    const [year, monthDay] = date.split('/');
+                    const month = monthDay.split('/')[0];
+                    const day = monthDay.split('/')[1];
+
+
+                    prElement.innerHTML = `
+                        <div class="pr-date">
+                            <span class="block text-white font-semibold">${year}年</span>
+                            <span class="block text-[#EBD27A] text-2xl font-bold">${month}/${day}</span>
+                        </div>
+                        <div class="pr-content">
+                            <h2 class="text-2xl font-semibold text-white mb-2">${pr.title}</h2>
+                            <p class="text-gray-300 mb-4">${pr.content.substring(0, 200)}${pr.content.length > 200 ? '...' : ''}</p>
+                            <a href="press_release_detail.html?id=${pr.id}" class="btn-primary bg-[#C8A042] text-white py-2 px-6 rounded-full text-md font-semibold hover:bg-[#EBD27A] hover:text-[#1A1A1A]">詳細を見る</a>
+                        </div>
+                    `;
+                    prListContainer.appendChild(prElement);
+                });
+            }, (error) => {
+                console.error("Error loading press releases:", error);
+                document.getElementById('press-release-list').innerHTML = '<p class="text-red-400 text-center">プレスリリースの読み込み中にエラーが発生しました。</p>';
+            });
+        }
+    </script>
+    <style>
+        /* Custom CSS for gradients and font fallback - consistent with main page */
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            background-color: #1A1A1A; /* Base dark color */
+            color: #E0E0E0; /* Default text color */
+            overflow-x: hidden; /* Prevent horizontal scroll */
+        }
+        html {
+            scroll-behavior: smooth;
+        }
+        .bg-gradient-dark {
+            background: linear-gradient(180deg, #1A1A1A 0%, #2A2A2A 100%);
+        }
+        .bg-gradient-dark-light {
+            background: linear-gradient(180deg, #2A2A2A 0%, #1A1A1A 100%);
+        }
+        .card-hover-effect {
+            transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+        }
+        .card-hover-effect:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+        /* Button hover effects - consistent with main page */
+        .btn-primary {
+            transition: background-color 0.3s ease-in-out, color 0.3s ease-in-out, border-color 0.3s ease-in-out;
+        }
+        .btn-primary:hover {
+            background-color: #EBD27A;
+            color: #1A1A1A;
+        }
+        /* Hamburger menu animation - consistent with main page */
+        .hamburger-line {
+            width: 24px;
+            height: 3px;
+            background-color: #E0E0E0;
+            margin: 4px 0;
+            transition: all 0.3s ease-in-out;
+        }
+        .hamburger-open .line-top {
+            transform: translateY(7px) rotate(45deg);
+        }
+        .hamburger-open .line-middle {
+            opacity: 0;
+        }
+        .hamburger-open .line-bottom {
+            transform: translateY(-7px) rotate(-45deg);
+        }
+        .mobile-menu-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(26, 26, 26, 0.95);
+            z-index: 40; /* Above header */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transform: translateX(100%);
+            transition: transform 0.3s ease-in-out;
+        }
+        .mobile-menu-overlay.open {
+            transform: translateX(0);
+        }
+        .mobile-menu-overlay a {
+            font-size: 1.5rem;
+            margin: 1rem 0;
+            color: #E0E0E0;
+            transition: color 0.2s ease-in-out;
+        }
+        .mobile-menu-overlay a:hover {
+            color: #EBD27A;
+        }
+        /* Specific styles for press release list */
+        .pr-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 1.5rem; /* Space between date and content */
+            background-color: #2A2A2A; /* Card background */
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+        }
+        .pr-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+        }
+        .pr-date {
+            flex-shrink: 0; /* Prevent date from shrinking */
+            width: 120px; /* Fixed width for date column */
+            font-size: 0.9rem;
+            color: #A0A0A0;
+            text-align: right;
+            padding-top: 0.25rem; /* Align text vertically */
+        }
+        .pr-date .year {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #E0E0E0;
+        }
+        .pr-date .month-day {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #EBD27A;
+            line-height: 1;
+        }
+        .pr-content {
+            flex-grow: 1;
+        }
+        .pr-content h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #FFFFFF;
+            margin-bottom: 0.5rem;
+        }
+        .pr-content p {
+            font-size: 1rem;
+            color: #D0D0D0;
+            margin-bottom: 1rem;
+        }
+        @media (max-width: 767px) { /* Mobile specific adjustments */
+            .pr-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+                padding: 1rem;
+            }
+            .pr-date {
+                width: auto;
+                text-align: left;
+                font-size: 0.8rem;
+                padding-top: 0;
+            }
+            .pr-date .month-day {
+                font-size: 1.5rem;
+            }
+            .pr-content h2 {
+                font-size: 1.25rem;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gradient-dark">
+
+    <!-- Header Section - Consistent with main page -->
+    <header class="fixed top-0 left-0 w-full bg-gradient-to-b from-[#1A1A1A] to-transparent py-4 px-6 md:px-12 flex justify-between items-center z-50">
+        <a href="index.html" class="flex items-center space-x-2">
+            <img src="https://googleusercontent.com/image_generation_content/4eba096d-e433-4292-8058-366bf91f7791" alt="G-ACE.inc TGAXIS Logo" class="h-10">
+        </a>
+        <nav class="hidden md:flex space-x-8">
+            <a href="index.html#services" class="text-lg font-medium text-gray-300 hover:text-[#EBD27A] transition-colors duration-300 whitespace-nowrap">サービス</a>
+            <a href="index.html#company" class="text-lg font-medium text-gray-300 hover:text-[#EBD27A] transition-colors duration-300 whitespace-nowrap">会社概要</a>
+            <a href="index.html#team" class="text-lg font-medium text-gray-300 hover:text-[#EBD27A] transition-colors duration-300 whitespace-nowrap">チーム</a>
+            <a href="contact_us.html" class="text-lg font-medium text-gray-300 hover:text-[#EBD27A] transition-colors duration-300 whitespace-nowrap">お問い合わせ</a>
+            <a href="press_release.html" class="text-lg font-medium text-gray-300 hover:text-[#52A6D8] transition-colors duration-300 whitespace-nowrap">プレスリリース</a>
+        </nav>
+
+        <!-- Language Switcher (Dropdown) -->
+        <div class="relative hidden md:block ml-4">
+            <button id="lang-dropdown-button" class="text-sm font-medium text-gray-300 hover:text-[#EBD27A] transition-colors duration-300 flex items-center whitespace-nowrap">
+                日本語
+                <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </button>
+            <div id="lang-dropdown-menu" class="absolute right-0 mt-2 w-40 bg-[#2A2A2A] rounded-md shadow-lg py-1 hidden z-20">
+                <a href="#" class="block px-4 py-2 text-sm text-gray-300 hover:bg-[#1A1A1A] hover:text-[#EBD27A]" onclick="switchLanguage('ja'); return false;">日本語</a>
+                <a href="#" class="block px-4 py-2 text-sm text-gray-300 hover:bg-[#1A1A1A] hover:text-[#EBD27A]" onclick="switchLanguage('en'); return false;">English</a>
+                <a href="#" class="block px-4 py-2 text-sm text-gray-300 hover:bg-[#1A1A1A] hover:text-[#EBD27A]" onclick="switchLanguage('ru'); return false;">Русский</a>
+                <a href="#" class="block px-4 py-2 text-sm text-gray-300 hover:bg-[#1A1A1A] hover:text-[#EBD27A]" onclick="switchLanguage('pt-br'); return false;">Português (BR)</a>
+                <a href="#" class="block px-4 py-2 text-sm text-gray-300 hover:bg-[#1A1A1A] hover:text-[#EBD27A]" onclick="switchLanguage('de'); return false;">Deutsch</a>
+                <a href="#" class="block px-4 py-2 text-sm text-gray-300 hover:bg-[#1A1A1A] hover:text-[#EBD27A]" onclick="switchLanguage('fr'); return false;">Français</a>
+                <a href="#" class="block px-4 py-2 text-sm text-gray-300 hover:bg-[#1A1A1A] hover:text-[#EBD27A]" onclick="switchLanguage('zh-cn'); return false;">中文 (简体)</button>
+                <a href="#" class="block px-4 py-2 text-sm text-gray-300 hover:bg-[#1A1A1A] hover:text-[#EBD27A]" onclick="switchLanguage('ko'); return false;">한국어</a>
+            </div>
+        </div>
+
+        <!-- Mobile Hamburger Menu -->
+        <div class="md:hidden flex items-center z-50">
+            <button id="hamburger-button" class="flex flex-col justify-center items-center p-2 rounded-md focus:outline-none">
+                <div class="hamburger-line line-top"></div>
+                <div class="hamburger-line line-middle"></div>
+                <div class="hamburger-line line-bottom"></div>
+            </button>
+        </div>
+    </header>
+
+    <!-- Mobile Menu Overlay -->
+    <div id="mobile-menu" class="mobile-menu-overlay">
+        <a href="index.html#services" class="block" onclick="closeMobileMenu()">サービス</a>
+        <a href="index.html#company" class="block" onclick="closeMobileMenu()">会社概要</a>
+        <a href="index.html#team" class="block" onclick="closeMobileMenu()">チーム</a>
+        <a href="contact_us.html" class="block" onclick="closeMobileMenu()">お問い合わせ</a>
+        <a href="press_release.html" class="block" onclick="closeMobileMenu()">プレスリリース</a>
+        <div class="flex flex-col items-center mt-4">
+            <button class="text-lg font-medium text-gray-300 hover:text-[#EBD27A] transition-colors duration-300 mb-2" onclick="switchLanguage('ja'); closeMobileMenu();">日本語</button>
+            <button class="text-lg font-medium text-gray-300 hover:text-[#EBD27A] transition-colors duration-300 mb-2" onclick="switchLanguage('en'); closeMobileMenu();">English</button>
+            <button class="text-lg font-medium text-gray-300 hover:text-[#EBD27A] transition-colors duration-300 mb-2" onclick="switchLanguage('ru'); closeMobileMenu();">Русский</button>
+            <button class="text-lg font-medium text-gray-300 hover:text-[#EBD27A] transition-colors duration-300 mb-2" onclick="switchLanguage('pt-br'); closeMobileMenu();">Português (BR)</button>
+            <button class="text-lg font-medium text-gray-300 hover:text-[#EBD27A] transition-colors duration-300 mb-2" onclick="switchLanguage('de'); closeMobileMenu();">Deutsch</button>
+            <button class="text-lg font-medium text-gray-300 hover:text-[#EBD27A] transition-colors duration-300 mb-2" onclick="switchLanguage('fr'); closeMobileMenu();">Français</button>
+            <button class="text-lg font-medium text-gray-300 hover:text-[#EBD27A] transition-colors duration-300 mb-2" onclick="switchLanguage('zh-cn'); closeMobileMenu();">中文 (简体)</button>
+            <button class="text-lg font-medium text-gray-300 hover:text-[#EBD27A] transition-colors duration-300" onclick="switchLanguage('ko'); closeMobileMenu();">한국어</button>
+        </div>
+    </div>
+
+    <main class="pt-24"> <!-- Padding top to account for fixed header -->
+        <section class="py-12 px-6 md:px-12 bg-gradient-dark-light">
+            <div class="max-w-4xl mx-auto text-center">
+                <h1 class="text-4xl md:text-5xl font-bold text-[#EBD27A] mb-8">プレスリリース</h1>
+                <p class="text-lg text-gray-300 mb-12">G-ACE.inc TGAXISの最新の活動や発表についてご覧いただけます。</p>
+
+                <div id="press-release-list" class="space-y-8 text-left">
+                    <!-- Press Release Items will be loaded here by JavaScript from Firestore -->
+                    <p class="text-gray-400 text-center col-span-full">プレスリリースを読み込み中...</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer Section - Consistent with main page -->
+    <footer class="bg-[#1A1A1A] py-8 text-center text-gray-500 text-sm px-6">
+        <div class="max-w-7xl mx-auto">
+            <p>&copy; 2025 G-ACE.inc TGAXIS All Rights Reserved.</p>
+            <div class="mt-2 space-x-4">
+                <a href="#" class="hover:text-[#EBD27A] transition-colors duration-300">プライバシーポリシー</a>
+                <a href="#" class="hover:text-[#EBD27A] transition-colors duration-300">利用規約</a>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>
